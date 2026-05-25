@@ -1,0 +1,280 @@
+`timescale 1ns / 1ps
+
+module ad7193_controller (
+    input  wire        clk,
+    input  wire        rst_n,
+    
+    // User Interface
+    output reg  [23:0] adc_ch1_data,
+    output reg         adc_ch1_valid,
+    output reg  [23:0] adc_ch2_data,
+    output reg         adc_ch2_valid,
+    output reg  [23:0] adc_ch3_data,
+    output reg         adc_ch3_valid,
+    output reg  [1:0]  current_channel,
+    
+    // SPI Master Interface
+    output reg         spi_start,
+    output reg  [5:0]  spi_transfer_length,
+    output reg  [47:0] spi_data_in,
+    input  wire [47:0] spi_data_out,
+    input  wire        spi_busy,
+    input  wire        spi_done,
+    
+    // Physical SPI Control
+    output reg         spi_cs_n,
+    input  wire        spi_miso,
+    
+    // Debug
+    output wire [4:0]  state_out
+);
+
+    localparam RESET              = 5'd0;
+    localparam POWERUP_WAIT       = 5'd1;
+    localparam INIT_ADC           = 5'd2;
+    localparam INIT_ADC_WAIT      = 5'd3;
+    localparam INIT_ADC_WAIT_LOOP = 5'd4;
+    localparam INIT_MODE          = 5'd5;
+    
+    localparam CONFIG_CH1         = 5'd6;
+    localparam WAIT_CH1_RDY       = 5'd7;
+    localparam READ_CMD_CH1       = 5'd8;
+    localparam READ_DATA_CH1      = 5'd9;
+    localparam STORE_CH1          = 5'd10;
+    
+    localparam CONFIG_CH2         = 5'd11;
+    localparam WAIT_CH2_RDY       = 5'd12;
+    localparam READ_CMD_CH2       = 5'd13;
+    localparam READ_DATA_CH2      = 5'd14;
+    localparam STORE_CH2          = 5'd15;
+    
+    localparam CONFIG_CH3         = 5'd16;
+    localparam WAIT_CH3_RDY       = 5'd17;
+    localparam READ_CMD_CH3       = 5'd18;
+    localparam READ_DATA_CH3      = 5'd19;
+    localparam STORE_CH3          = 5'd20;
+    
+    localparam WAIT_SPI_DONE      = 5'd21;
+    
+    reg [4:0] state;
+    reg [4:0] return_state;
+    reg [17:0] wait_timer; 
+    
+    assign state_out = state;
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            state               <= RESET;
+            adc_ch1_data        <= 24'd0;
+            adc_ch2_data        <= 24'd0;
+            adc_ch3_data        <= 24'd0;
+            adc_ch1_valid       <= 1'b0;
+            adc_ch2_valid       <= 1'b0;
+            adc_ch3_valid       <= 1'b0;
+            current_channel     <= 2'd0;
+            spi_start           <= 1'b0;
+            spi_transfer_length <= 6'd0;
+            spi_data_in         <= 48'd0;
+            spi_cs_n            <= 1'b1;
+            wait_timer          <= 18'd0;
+            return_state        <= RESET;
+        end else begin
+            // Default pulse
+            spi_start     <= 1'b0;
+            adc_ch1_valid <= 1'b0;
+            adc_ch2_valid <= 1'b0;
+            adc_ch3_valid <= 1'b0;
+            
+            case (state)
+                RESET: begin
+                    spi_cs_n   <= 1'b1;
+                    wait_timer <= 18'd250_000; // 2 ms delay
+                    state      <= POWERUP_WAIT;
+                end
+                
+                POWERUP_WAIT: begin
+                    if (wait_timer == 18'd0) begin
+                        state <= INIT_ADC;
+                    end else begin
+                        wait_timer <= wait_timer - 18'd1;
+                    end
+                end
+                
+                INIT_ADC: begin
+                    // Write 48 ones to reset AD7193 serial interface
+                    spi_cs_n            <= 1'b0;
+                    spi_data_in         <= 48'hFFFF_FFFF_FFFF; 
+                    spi_transfer_length <= 6'd48;
+                    spi_start           <= 1'b1;
+                    state               <= WAIT_SPI_DONE;
+                    return_state        <= INIT_ADC_WAIT;
+                end
+                
+                INIT_ADC_WAIT: begin
+                    spi_cs_n   <= 1'b1;
+                    wait_timer <= 18'd125_000; // Wait 1 ms
+                    state      <= INIT_ADC_WAIT_LOOP;
+                end
+                
+                INIT_ADC_WAIT_LOOP: begin
+                    if (wait_timer == 18'd0) begin
+                        state <= INIT_MODE;
+                    end else begin
+                        wait_timer <= wait_timer - 18'd1;
+                    end
+                end
+                
+                INIT_MODE: begin
+                    spi_cs_n            <= 1'b0;
+                    // Mode Data: Continuous Conversion, External Crystal, Sinc4, 12Hz
+                    spi_data_in         <= {32'h08_08_00_60, 16'd0};
+                    spi_transfer_length <= 6'd32;
+                    spi_start           <= 1'b1;
+                    state               <= WAIT_SPI_DONE;
+                    return_state        <= CONFIG_CH1;
+                end
+                
+                // =====================================
+                // CHANNEL 1 (AIN1 - AIN4 Pseudo-Diff)
+                // =====================================
+                CONFIG_CH1: begin
+                    current_channel     <= 2'd1;
+                    spi_cs_n            <= 1'b0;
+                    // Config Data: 0x080100 (Pseudo bit 19 = 1, CH0 bit 8 = 1)
+                    spi_data_in         <= {32'h10_08_01_00, 16'd0};
+                    spi_transfer_length <= 6'd32;
+                    spi_start           <= 1'b1;
+                    state               <= WAIT_SPI_DONE;
+                    return_state        <= WAIT_CH1_RDY;
+                end
+                
+                WAIT_CH1_RDY: begin
+                    spi_cs_n <= 1'b0; // keep low to poll MISO
+                    if (spi_miso == 1'b0) begin
+                        state <= READ_CMD_CH1;
+                    end
+                end
+                
+                READ_CMD_CH1: begin
+                    spi_data_in         <= {8'h58, 40'd0};
+                    spi_transfer_length <= 6'd8;
+                    spi_start           <= 1'b1;
+                    state               <= WAIT_SPI_DONE;
+                    return_state        <= READ_DATA_CH1;
+                end
+                
+                READ_DATA_CH1: begin
+                    spi_data_in         <= 48'd0;
+                    spi_transfer_length <= 6'd24;
+                    spi_start           <= 1'b1;
+                    state               <= WAIT_SPI_DONE;
+                    return_state        <= STORE_CH1;
+                end
+                
+                STORE_CH1: begin
+                    spi_cs_n      <= 1'b1; // DE-ASSERT CS to frame the transfer
+                    adc_ch1_data  <= spi_data_out[23:0];
+                    adc_ch1_valid <= 1'b1;
+                    state         <= CONFIG_CH2;
+                end
+
+                // =====================================
+                // CHANNEL 2 (AIN2 - AIN4 Pseudo-Diff)
+                // =====================================
+                CONFIG_CH2: begin
+                    current_channel     <= 2'd2;
+                    spi_cs_n            <= 1'b0;
+                    // Config Data: 0x080200 (Pseudo bit 19 = 1, CH1 bit 9 = 1)
+                    spi_data_in         <= {32'h10_08_02_00, 16'd0};
+                    spi_transfer_length <= 6'd32;
+                    spi_start           <= 1'b1;
+                    state               <= WAIT_SPI_DONE;
+                    return_state        <= WAIT_CH2_RDY;
+                end
+                
+                WAIT_CH2_RDY: begin
+                    spi_cs_n <= 1'b0;
+                    if (spi_miso == 1'b0) begin
+                        state <= READ_CMD_CH2;
+                    end
+                end
+                
+                READ_CMD_CH2: begin
+                    spi_data_in         <= {8'h58, 40'd0};
+                    spi_transfer_length <= 6'd8;
+                    spi_start           <= 1'b1;
+                    state               <= WAIT_SPI_DONE;
+                    return_state        <= READ_DATA_CH2;
+                end
+                
+                READ_DATA_CH2: begin
+                    spi_data_in         <= 48'd0;
+                    spi_transfer_length <= 6'd24;
+                    spi_start           <= 1'b1;
+                    state               <= WAIT_SPI_DONE;
+                    return_state        <= STORE_CH2;
+                end
+                
+                STORE_CH2: begin
+                    spi_cs_n      <= 1'b1;
+                    adc_ch2_data  <= spi_data_out[23:0];
+                    adc_ch2_valid <= 1'b1;
+                    state         <= CONFIG_CH3;
+                end
+
+                // =====================================
+                // CHANNEL 3 (AIN3 - AIN4 Pseudo-Diff)
+                // =====================================
+                CONFIG_CH3: begin
+                    current_channel     <= 2'd3;
+                    spi_cs_n            <= 1'b0;
+                    // Config Data: 0x080400 (Pseudo bit 19 = 1, CH2 bit 10 = 1)
+                    spi_data_in         <= {32'h10_08_04_00, 16'd0};
+                    spi_transfer_length <= 6'd32;
+                    spi_start           <= 1'b1;
+                    state               <= WAIT_SPI_DONE;
+                    return_state        <= WAIT_CH3_RDY;
+                end
+                
+                WAIT_CH3_RDY: begin
+                    spi_cs_n <= 1'b0;
+                    if (spi_miso == 1'b0) begin
+                        state <= READ_CMD_CH3;
+                    end
+                end
+                
+                READ_CMD_CH3: begin
+                    spi_data_in         <= {8'h58, 40'd0};
+                    spi_transfer_length <= 6'd8;
+                    spi_start           <= 1'b1;
+                    state               <= WAIT_SPI_DONE;
+                    return_state        <= READ_DATA_CH3;
+                end
+                
+                READ_DATA_CH3: begin
+                    spi_data_in         <= 48'd0;
+                    spi_transfer_length <= 6'd24;
+                    spi_start           <= 1'b1;
+                    state               <= WAIT_SPI_DONE;
+                    return_state        <= STORE_CH3;
+                end
+                
+                STORE_CH3: begin
+                    spi_cs_n      <= 1'b1;
+                    adc_ch3_data  <= spi_data_out[23:0];
+                    adc_ch3_valid <= 1'b1;
+                    state         <= CONFIG_CH1; // LOOP BACK TO CH1!
+                end
+                
+                WAIT_SPI_DONE: begin
+                    if (spi_done) begin
+                        state <= return_state;
+                    end
+                end
+                
+                default: state <= RESET;
+            endcase
+        end
+    end
+
+endmodule
