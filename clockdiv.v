@@ -1,7 +1,8 @@
+// Division of the hz to 2MHz
 `timescale 1ns / 1ps
 
 module clock_divider #(
-    parameter DIV_VALUE = 62 // 125MHz / 2MHz = 62.5 -> count to 62 for 1MHz SPI
+    parameter DIV_VALUE = 62 // 100MHz / 2MHz = 62.5 -> count to 62 for 1MHz SPI
 ) (
     input  wire clk,
     input  wire rst_n,

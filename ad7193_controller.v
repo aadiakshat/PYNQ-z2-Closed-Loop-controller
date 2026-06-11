@@ -126,22 +126,18 @@ module ad7193_controller (
                 
                 INIT_MODE: begin
                     spi_cs_n            <= 1'b0;
-                    // Mode Data: Continuous Conversion, External Crystal, Sinc4, 12Hz
-                    spi_data_in         <= {32'h08_08_00_60, 16'd0};
+                    // Mode Data: Continuous Conversion 480Hz per channel (160Hz loop rate)
+                    spi_data_in         <= {32'h08_08_00_0A, 16'd0};
                     spi_transfer_length <= 6'd32;
                     spi_start           <= 1'b1;
                     state               <= WAIT_SPI_DONE;
                     return_state        <= CONFIG_CH1;
                 end
-                
-                // =====================================
-                // CHANNEL 1 (AIN1 - AIN4 Pseudo-Diff)
-                // =====================================
                 CONFIG_CH1: begin
                     current_channel     <= 2'd1;
                     spi_cs_n            <= 1'b0;
-                    // Config Data: 0x080100 (Pseudo bit 19 = 1, CH0 bit 8 = 1)
-                    spi_data_in         <= {32'h10_08_01_00, 16'd0};
+                    // Config Data: 0x000100 , it is the configuration register, check datasheet for some functonality changes
+                    spi_data_in         <= {32'h10_00_01_00, 16'd0};
                     spi_transfer_length <= 6'd32;
                     spi_start           <= 1'b1;
                     state               <= WAIT_SPI_DONE;
@@ -157,15 +153,7 @@ module ad7193_controller (
                 
                 READ_CMD_CH1: begin
                     spi_data_in         <= {8'h58, 40'd0};
-                    spi_transfer_length <= 6'd8;
-                    spi_start           <= 1'b1;
-                    state               <= WAIT_SPI_DONE;
-                    return_state        <= READ_DATA_CH1;
-                end
-                
-                READ_DATA_CH1: begin
-                    spi_data_in         <= 48'd0;
-                    spi_transfer_length <= 6'd24;
+                    spi_transfer_length <= 6'd32;
                     spi_start           <= 1'b1;
                     state               <= WAIT_SPI_DONE;
                     return_state        <= STORE_CH1;
@@ -178,14 +166,11 @@ module ad7193_controller (
                     state         <= CONFIG_CH2;
                 end
 
-                // =====================================
-                // CHANNEL 2 (AIN2 - AIN4 Pseudo-Diff)
-                // =====================================
                 CONFIG_CH2: begin
                     current_channel     <= 2'd2;
                     spi_cs_n            <= 1'b0;
-                    // Config Data: 0x080200 (Pseudo bit 19 = 1, CH1 bit 9 = 1)
-                    spi_data_in         <= {32'h10_08_02_00, 16'd0};
+                    // Config Data: 0x000200 (Fully-Diff, CH1 bit 9 = 1)
+                    spi_data_in         <= {32'h10_00_02_00, 16'd0};
                     spi_transfer_length <= 6'd32;
                     spi_start           <= 1'b1;
                     state               <= WAIT_SPI_DONE;
@@ -201,15 +186,7 @@ module ad7193_controller (
                 
                 READ_CMD_CH2: begin
                     spi_data_in         <= {8'h58, 40'd0};
-                    spi_transfer_length <= 6'd8;
-                    spi_start           <= 1'b1;
-                    state               <= WAIT_SPI_DONE;
-                    return_state        <= READ_DATA_CH2;
-                end
-                
-                READ_DATA_CH2: begin
-                    spi_data_in         <= 48'd0;
-                    spi_transfer_length <= 6'd24;
+                    spi_transfer_length <= 6'd32;
                     spi_start           <= 1'b1;
                     state               <= WAIT_SPI_DONE;
                     return_state        <= STORE_CH2;
@@ -222,14 +199,11 @@ module ad7193_controller (
                     state         <= CONFIG_CH3;
                 end
 
-                // =====================================
-                // CHANNEL 3 (AIN3 - AIN4 Pseudo-Diff)
-                // =====================================
                 CONFIG_CH3: begin
                     current_channel     <= 2'd3;
                     spi_cs_n            <= 1'b0;
-                    // Config Data: 0x080400 (Pseudo bit 19 = 1, CH2 bit 10 = 1)
-                    spi_data_in         <= {32'h10_08_04_00, 16'd0};
+                    // Config Data: 0x000400 (Fully-Diff, CH2 bit 10 = 1)
+                    spi_data_in         <= {32'h10_00_04_00, 16'd0};
                     spi_transfer_length <= 6'd32;
                     spi_start           <= 1'b1;
                     state               <= WAIT_SPI_DONE;
@@ -245,15 +219,7 @@ module ad7193_controller (
                 
                 READ_CMD_CH3: begin
                     spi_data_in         <= {8'h58, 40'd0};
-                    spi_transfer_length <= 6'd8;
-                    spi_start           <= 1'b1;
-                    state               <= WAIT_SPI_DONE;
-                    return_state        <= READ_DATA_CH3;
-                end
-                
-                READ_DATA_CH3: begin
-                    spi_data_in         <= 48'd0;
-                    spi_transfer_length <= 6'd24;
+                    spi_transfer_length <= 6'd32;
                     spi_start           <= 1'b1;
                     state               <= WAIT_SPI_DONE;
                     return_state        <= STORE_CH3;
