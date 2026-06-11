@@ -1,0 +1,11 @@
+# compile verilog/system verilog design source files
+verilog xil_defaultlib  --include "../../../../../../../Xilinx/2025.1/Vivado/data/rsb/busdef" --include "../../../../interfacing.gen/sources_1/bd/system/ipshared/ec67/hdl" --include "../../../../interfacing.gen/sources_1/bd/system/ipshared/6cfa/hdl" --include "../../../../interfacing.gen/sources_1/bd/system/ipshared/f0b6/hdl/verilog" --include "../../../../interfacing.gen/sources_1/bd/system/ipshared/a8e4/hdl/verilog" --include "C:/Xilinx/2025.1/Vivado/data/xilinx_vip/include" \
+"../../../../../OneDrive/Desktop/Project/beam_pid_controller.v" \
+"../../../../../OneDrive/Desktop/Project/vsum_inv_lut.v" \
+"../../../../../OneDrive/Desktop/Project/tb_beam_pid_controller.v" \
+
+# compile glbl module
+verilog xil_defaultlib "glbl.v"
+
+# Do not sort compile order
+nosort
